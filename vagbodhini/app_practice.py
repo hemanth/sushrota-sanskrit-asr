@@ -11,7 +11,9 @@ MIN over sub-tokens). Green/amber/red bands + a % correctness. Validated in gop_
 Endpoints:  GET /  ,  POST /prep {text}  ,  POST /score {audio, text}  ,  GET /health
 Run:  CUDA_VISIBLE_DEVICES=0 python app_practice.py   (uvicorn on :8010)
 """
-import os, io, re, json, time, uuid, hashlib, unicodedata
+import os
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")  # avoid var-length frag
+import io, re, json, time, uuid, hashlib, unicodedata
 import numpy as np, soundfile as sf, torch, requests
 from fastapi import FastAPI, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,7 +33,21 @@ TTS_URL = os.environ.get("TTS_URL", "http://localhost:8020")   # Vagdhenu micros
 CACHE = f"{ROOT}/data/tts_cache"; os.makedirs(CACHE, exist_ok=True)
 FB = f"{ROOT}/data/practice_feedback"; os.makedirs(f"{FB}/audio", exist_ok=True)   # "I said it right" logs
 FLYW = f"{ROOT}/data/practice_flywheel"; os.makedirs(f"{FLYW}/audio", exist_ok=True)  # consented ASR data
-COLLECT_MIN = float(os.environ.get("COLLECT_MIN", "90"))   # collect (audio, reference) pairs at >= this %
+COLLECT_MIN = float(os.environ.get("COLLECT_MIN", "90"))   # "pass" tier: label trusted, training-ready
+REVIEW_MIN = float(os.environ.get("REVIEW_MIN", "55"))     # "review" tier floor: ASR struggled, ambiguous
+APP_VERSION = "vagbodhini-2026-07-17-v11ep3"               # stamped on every collected record (tags scoring model)
+PROSE_VOICE = os.environ.get("PROSE_VOICE", "anuṣṭubh")    # gadya drops onsets -> use anuṣṭubh for prose
+def collect(raw_wav, entry):
+    """Append one consented flywheel record: save the ORIGINAL 16k wav + a metadata line. `entry`
+    carries tier/text(label)/hyp(what ASR heard)/percent/dur/script/ops so the data is curatable."""
+    try:
+        cid = uuid.uuid4().hex[:12]
+        with open(f"{FLYW}/audio/{cid}.wav", "wb") as fh: fh.write(raw_wav)
+        entry = {"id": cid, "t": int(time.time()), **entry}
+        with open(f"{FLYW}/log.jsonl", "a") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
 DAILY_LIMIT = int(os.environ.get("DAILY_LIMIT", "10"))     # new ślokas synthesised per IP per day
 LIMITS_FILE = f"{ROOT}/data/practice_limits.json"
 try: _limits = json.load(open(LIMITS_FILE))
@@ -79,8 +95,8 @@ def is_base(ch):
     return (0x0905 <= o <= 0x0939) or (0x0958 <= o <= 0x0961) or (0x0972 <= o <= 0x097F)
 
 print("[boot] loading v5 on", DEV, flush=True)
-M = nemo_asr.models.EncDecHybridRNNTCTCBPEModel.restore_from(
-    f"{ROOT}/exp/ft_ctc_v5/ft_ctc_ep20.nemo", map_location=DEV).eval()
+MODEL_PATH = os.environ.get("MODEL_PATH", f"{ROOT}/exp/ft_ctc_current.nemo")  # shared core ASR (symlink → current best); Vāgbodhinī + Su-shrotā read the SAME pointer so they update together
+M = nemo_asr.models.EncDecHybridRNNTCTCBPEModel.restore_from(MODEL_PATH, map_location=DEV).eval()
 SUB = M.tokenizer.tokenizers_dict["sa"]
 LAB = json.load(open(f"{ROOT}/data/eval_logits/labels.json"))   # col i (1..256) -> LAB[i-1]
 # Representational-invariance for GOP: the target token's effective posterior is the MAX over
@@ -234,10 +250,10 @@ def _cluster(text):
 def akshara_split(text):
     return [{"text": a["text"], "word_end": a["word_end"]} for a in _cluster(text)]
 
-def segment(dev_text):
-    """Split into pādas. Verses are split on ॥ / blank line; within a verse, metre detection
-    (detect_pada_len) sets the pāda boundaries. Prose / undetected verses fall back to
-    daṇḍa/newline chunks. Returns list of pādas: {i, verse, metre, aksharas:[...]}."""
+def segment(dev_text, force_gadya=False):
+    """Split into units. Verses are split on ॥ / blank line; within a verse, metre detection
+    (detect_pada_len) sets the pāda boundaries. Prose / undetected verses (or force_gadya=True for
+    an explicit Prose choice) fall back to daṇḍa/newline chunks. Returns {i, verse, metre, aksharas}."""
     verses = re.split(r'॥|\n\s*\n', dev_text)
     padas = []; vi = 0
     for verse in verses:
@@ -245,7 +261,7 @@ def segment(dev_text):
         aks = akshara_split(verse)
         if not aks: continue
         w = scan_weights(verse)
-        det = detect_pada_len(w) if len(w) == len(aks) else None
+        det = None if force_gadya else (detect_pada_len(w) if len(w) == len(aks) else None)
         if det:
             L, metre = det
             for p0 in range(0, len(aks), L):
@@ -267,14 +283,17 @@ def build_units(padas, granularity):
     """Group pādas into learning units. pada=each pāda; ardha=consecutive pairs; full=whole verse
     (per verse). Each unit: flat aksharas (display/score), tts_text (pādas joined by \\n for TTS
     prosody), text (score, pādas joined by space), metre (TTS hint)."""
-    byverse = {}
-    for p in padas: byverse.setdefault(p["verse"], []).append(p)
-    groups = []                                        # (metre, verse, [pāda,...])
-    for vi, pl in byverse.items():
-        m = pl[0]["metre"]
-        if granularity == "pada":    groups += [(m, vi, [p]) for p in pl]
-        elif granularity == "ardha": groups += [(m, vi, pl[k:k + 2]) for k in range(0, len(pl), 2)]
-        else:                        groups.append((m, vi, pl))
+    if granularity == "all":                           # prose "passage": the whole input as one unit
+        groups = [(padas[0]["metre"], padas[0]["verse"], padas)] if padas else []
+    else:
+        byverse = {}
+        for p in padas: byverse.setdefault(p["verse"], []).append(p)
+        groups = []                                    # (metre, verse, [pāda,...])
+        for vi, pl in byverse.items():
+            m = pl[0]["metre"]
+            if granularity in ("pada", "phrase"): groups += [(m, vi, [p]) for p in pl]
+            elif granularity == "ardha":          groups += [(m, vi, pl[k:k + 2]) for k in range(0, len(pl), 2)]
+            else:                                 groups.append((m, vi, pl))
     units = []
     for i, (m, vi, pl) in enumerate(groups):
         units.append({"i": i, "verse": vi, "metre": m,
@@ -298,12 +317,16 @@ def tts_fetch(text, meter, seed=60):
             return None
     return f"/tts_cache/{key}.wav"
 
+MAX_WAV = 30 * 16000            # cap input length (30s) so no single clip can spike GPU memory
 def posteriors(wav):
+    if len(wav) > MAX_WAV: wav = wav[:MAX_WAV]
     sig = torch.tensor(wav).unsqueeze(0).to(DEV); sl = torch.tensor([len(wav)]).to(DEV)
     with torch.no_grad():
         enc, _ = M.forward(input_signal=sig, input_signal_length=sl)
         lp = M.ctc_decoder(encoder_output=enc)[0].cpu().numpy()
     cols = [BL] + list(range(OFF, OFF + V)); P = lp[:, cols]
+    del sig, sl, enc                                  # drop GPU tensors before caching allocator grows
+    if DEV != "cpu": torch.cuda.empty_cache()         # reclaim reserved mem (variable-length -> fragments)
     return P - lse(P, 1)
 
 def align_tokens(P, ids):
@@ -375,7 +398,7 @@ if os.path.isdir(_SPIKE):
 def health():
     try: tts = requests.get(f"{TTS_URL}/health", timeout=3).status_code == 200
     except Exception: tts = False
-    return {"status": "ok", "device": DEV, "tts": tts}
+    return {"status": "ok", "device": DEV, "tts": tts, "model": os.path.basename(MODEL_PATH), "ver": APP_VERSION}
 
 @app.post("/detect")
 async def detect_script(text: str = Form(...), script: str = Form("")):
@@ -388,20 +411,24 @@ async def detect_script(text: str = Form(...), script: str = Form("")):
             "devanagari": dev, "scripts": [{"id": i, "name": NAMES.get(i, i)} for i in PICKER]}
 
 @app.post("/generate")
-async def generate(request: Request, text: str = Form(...), script: str = Form("")):
-    """Segment into pādas (metre-detected), then render ALL three levels — pāda/ardha/full, each
-    a SEPARATE Vagdhenu pass over its own text (never audio-joined). Streams NDJSON progress:
-    {plan,total} → {progress,done,total} per render → {done,levels}. Daily per-IP limit counts
-    only NEW synthesis (cached re-generations are free)."""
+async def generate(request: Request, text: str = Form(...), script: str = Form(""), kind: str = Form("shloka")):
+    """kind='shloka' -> metre-detect, levels pāda/ardha/full. kind='prose' -> force gadya recitation,
+    levels phrase(each daṇḍa chunk)/passage(whole). Each unit a SEPARATE Vāgdhenu render (never
+    audio-joined). Streams NDJSON progress; daily per-IP limit counts only NEW synthesis."""
+    prose = (kind == "prose")
     sid = script if script in SCHEME else detect_script_id(text)
     dev = to_devanagari(text, sid)
-    padas = segment(dev)
+    padas = segment(dev, force_gadya=prose)
     if not padas: return JSONResponse({"error": "no text found"}, status_code=400)
+    grans = ("phrase", "all") if prose else ("pada", "ardha", "full")
     levels = {}
-    for gran in ("pada", "ardha", "full"):
+    for gran in grans:
         units = build_units(padas, gran)
         for u in units:
             for a in u["aksharas"]: a["disp"] = from_dev(a["text"], sid)
+            # Vāgdhenu's 'gadya' voice drops word-initial syllables; the anuṣṭubh voice renders onsets
+            # cleanly (verified). Use it for prose reference audio (segmentation stays gadya/daṇḍa).
+            if prose: u["metre"] = PROSE_VOICE
         levels[gran] = units
     jobs = {}                                                     # unique (tts_text -> metre)
     for lv in levels.values():
@@ -458,10 +485,12 @@ async def prep(text: str = Form(...)):
 
 @app.post("/score")
 async def score(audio: UploadFile = File(...), text: str = Form(...), script: str = Form(""),
-                mode: str = Form("strict")):
+                mode: str = Form("strict"), session: str = Form("")):
     """Akshara-level text comparison: free-decode the chant, canonicalise both sides, align to the
     reference. match→green, substitution→red (with what was heard), deletion→amber (not caught).
-    text = the unit's Devanāgarī (spaces at word ends); `heard` is echoed back in `script`."""
+    text = the unit's Devanāgarī (spaces at word ends); `heard` is echoed back in `script`.
+    EVERY attempt is logged (audio + known label + full metadata) — nothing is discarded; the tier
+    just records how trustworthy the pair is, so training draws only from the good tiers."""
     raw = await audio.read()
     try:
         wav, sr = sf.read(io.BytesIO(raw), dtype="float32")
@@ -473,13 +502,19 @@ async def score(audio: UploadFile = File(...), text: str = Form(...), script: st
         wav = wav[np.clip(idx, 0, len(wav) - 1)]
     # pre/post-roll silence: v5 tends to clip the audio onset/tail -> pad so the ASR doesn't drop
     # the first/last aksharas (which would show as spurious deletions).
+    dur = round((len(wav)) / 16000, 2)                     # original (pre-pad) duration
     pad = np.zeros(int(0.3 * 16000), np.float32)
     wav = np.concatenate([pad, wav.astype(np.float32), pad])
     t = norm(text)
-    if not t or len(wav) < 1600:
+    if not t or dur < 0.4:
         return JSONResponse({"error": "empty text or audio too short"}, status_code=400)
     sid = script if script in SCHEME else "devanagari"
-    P = posteriors(wav)
+    meta = {"text": t, "dur": dur, "sr": sr, "script": sid, "mode": mode, "session": session, "ver": APP_VERSION}
+    try:
+        P = posteriors(wav)                                # graceful degradation: if the ASR call
+    except Exception:                                      # itself fails, don't 500 — but still SAVE the
+        collect(raw, {"tier": "unscored", **meta})         # audio+label (precious data), tell the UI
+        return JSONResponse({"error": "scoring_unavailable"}, status_code=503)
     # consensus across decodes (one forward pass, cheap re-argmax at different blank penalties):
     # a syllable is only flagged RED when EVERY decode agrees it was substituted by the SAME token.
     # anything unstable across decodes -> AMBER ("unclear"), never a confident false accusation.
@@ -487,11 +522,11 @@ async def score(audio: UploadFile = File(...), text: str = Form(...), script: st
     hyps = [greedy(P, lam) for lam in (0.0, 3.0, 6.0)]
     ref = _cluster(t)
     opsets = [align_aksharas(ref, _cluster(h)) for h in hyps]
-    res = []; n_ok = n_red = n_amber = 0
+    res = []; n_ok = n_red = n_amber = 0; n_any = 0        # n_any = mode-independent "recognised"
     for i in range(len(ref)):
         kinds = [opsets[k][i][0] for k in range(len(hyps))]
         subs = [opsets[k][i][1] for k in range(len(hyps)) if opsets[k][i][0] == "sub"]
-        any_match = any(k == "match" for k in kinds)
+        any_match = any(k == "match" for k in kinds); n_any += any_match
         if strict:                                          # exacting: unanimous-correct or it's flagged
             if all(k == "match" for k in kinds): band = "green"
             elif not any_match: band = "red"                # no decode matched -> clearly off
@@ -505,35 +540,53 @@ async def score(audio: UploadFile = File(...), text: str = Form(...), script: st
         n_ok += band == "green"; n_red += band == "red"; n_amber += band == "amber"
     denom = (n_ok + n_red + n_amber) if strict else (n_ok + n_red)   # strict: amber counts against
     pct = round(100 * n_ok / denom, 1) if denom else 0.0
-    # consented data flywheel: a >=90% chant closely follows the reference, so (audio, reference)
-    # is a clean training pair. Save the ORIGINAL uploaded 16k wav + Devanāgarī reference label.
-    if pct >= COLLECT_MIN and (n_ok + n_red) >= 3:
-        try:
-            cid = uuid.uuid4().hex[:12]
-            with open(f"{FLYW}/audio/{cid}.wav", "wb") as fh: fh.write(raw)
-            with open(f"{FLYW}/log.jsonl", "a") as fh:
-                fh.write(json.dumps({"id": cid, "t": int(time.time()), "text": t, "percent": pct,
-                                     "script": sid, "mode": mode, "n_ok": n_ok, "n_red": n_red,
-                                     "n_amber": n_amber}, ensure_ascii=False) + "\n")
-        except Exception:
-            pass
+    # ---- tiered flywheel: collect data that actually TEACHES the model, not only what it aces ----
+    # tier by trustworthiness of the (audio, reference-label) pair:
+    #   pass   >= COLLECT_MIN (90) : user clearly chanted the reference -> label trusted (reinforce)
+    #   review REVIEW_MIN..COLLECT : ASR struggled; label ambiguous -> human-review queue (NOT auto-train)
+    #   (override tier is logged from /feedback: ASR-wrong + human-affirmed-correct = highest value)
+    # garbage guard: need enough judged aksharas AND some acoustic content actually recognised.
+    judged = n_ok + n_red + n_amber
+    recognised = len(_cluster(hyps[0]))
+    # tier on a MODE-INDEPENDENT match (fraction of ref aksharas some decode recognised), so data
+    # quality doesn't depend on the user's strict/liberal choice. EVERY attempt is saved with an
+    # honest tier — training pulls pass/override/review; low/unclear are archived for analysis.
+    match = round(100 * n_any / judged, 1) if judged else 0.0
+    if judged < 3 or recognised < 2:            tier = "unclear"   # ~nothing recognised (noise/off-mic)
+    elif match >= COLLECT_MIN:                   tier = "pass"
+    elif match >= REVIEW_MIN:                    tier = "review"
+    else:                                        tier = "low"      # ASR-hard / wrong verse — often the
+    ops = "".join(r["band"][0] for r in res)                       # most valuable failure data, kept!
+    collect(raw, {"tier": tier, "hyp": hyps[0], "hyps": hyps, "ops": ops, "match": match, "percent": pct,
+                  "n_ok": n_ok, "n_red": n_red, "n_amber": n_amber, **meta})
     return {"percent": pct, "aksharas": res, "mode": mode, "heard": from_dev(hyps[0], sid),
             "reference": from_dev(t, sid), "n_ok": n_ok, "n_red": n_red, "n_amber": n_amber}
 
 @app.post("/feedback")
 async def feedback(audio: UploadFile = File(...), reference: str = Form(""), heard: str = Form(""),
-                   script: str = Form(""), kind: str = Form("said_right")):
-    """Log a learner's 'I chanted this correctly' override: the audio + reference + what-we-heard,
-    so residual false-flags are both harmless (user overrides) and measurable (we count them)."""
-    fid = uuid.uuid4().hex[:12]
-    try:
-        with open(f"{FB}/audio/{fid}.wav", "wb") as f: f.write(await audio.read())
-    except Exception:
-        pass
+                   script: str = Form(""), kind: str = Form("said_right"),
+                   corrections: str = Form(""), corrected_text: str = Form(""), session: str = Form("")):
+    """Highest-value flywheel data: human corrections of ASR mistakes (trusted labels on real
+    failures). Three kinds:
+      said_right          — whole unit was chanted correctly (label = reference).
+      syllable_correction — user tapped the specific flagged aksharas they DID chant right; we log
+                            which reference aksharas the ASR got wrong (surgical failure examples).
+      text_correction     — user chanted a different valid reading; corrected_text is the true label.
+    """
+    raw = await audio.read()
+    t = norm(reference)
+    corr = []
+    try: corr = json.loads(corrections) if corrections else []
+    except Exception: corr = []
+    n_fixed = sum(1 for c in corr if c.get("ok"))
+    label = norm(corrected_text) if (kind == "text_correction" and corrected_text.strip()) else t
+    entry = {"tier": "override", "kind": kind, "text": label, "reference": t,
+             "heard": norm(heard), "script": script, "corrections": corr, "n_fixed": n_fixed,
+             "session": session, "ver": APP_VERSION}
+    collect(raw, entry)                                # audio + trusted label into the flywheel
     with open(f"{FB}/log.jsonl", "a") as f:
-        f.write(json.dumps({"id": fid, "t": int(time.time()), "kind": kind, "script": script,
-                            "reference": reference, "heard": heard}, ensure_ascii=False) + "\n")
-    return {"ok": True}
+        f.write(json.dumps({"t": int(time.time()), **entry}, ensure_ascii=False) + "\n")
+    return {"ok": True, "fixed": n_fixed}
 
 @app.get("/", response_class=HTMLResponse)
 def home():

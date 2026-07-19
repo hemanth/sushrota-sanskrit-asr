@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Vāgbodhinī · Sanskrit chant practice</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b5461f'/%3E%3Cg fill='none' stroke='%23fff' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M7 16h2'/%3E%3Cpath d='M11 12v8'/%3E%3Cpath d='M15 8v16'/%3E%3Cpath d='M19 11v10'/%3E%3Cpath d='M23 14v4'/%3E%3C/g%3E%3C/svg%3E">
 <style>
   :root{--bg:#faf7f2;--card:#fff;--ink:#2a2320;--mut:#8a8079;--line:#e7ded2;
         --grn:#2e9e5b;--grnbg:#e4f5ea;--amb:#d59320;--ambbg:#fbf1d9;--red:#d94f43;--redbg:#fbe4e2;
@@ -23,10 +24,18 @@
          background:#efe7db;color:var(--ink);transition:.12s}
   button:hover{filter:brightness(.97)}
   button.primary{background:var(--accent);color:#fff}
-  button.chant{background:transparent;color:var(--accent);border:1.5px solid var(--accent);border-radius:20px;padding:8px 18px}
+  button.chant{background:transparent;color:var(--accent);border:1.5px solid var(--accent);border-radius:20px;
+    padding:8px 18px 8px 14px;display:inline-flex;align-items:center;gap:7px}
   button.chant:hover{background:var(--accent);color:#fff;filter:none}
   button.chant.on{background:var(--red);border-color:var(--red);color:#fff;animation:pulse 1s infinite}
-  button.chant::before{content:"●";font-size:10px;margin-right:6px;vertical-align:1px;opacity:.75}
+  /* mic caricature — SVG mask so it takes the button's current text colour in every state */
+  button.chant::before{content:"";width:14px;height:16px;flex:0 0 auto;background:currentColor;
+    -webkit-mask:var(--mic) center/contain no-repeat;mask:var(--mic) center/contain no-repeat}
+  button.chant.on::before{-webkit-mask:var(--stop) center/contain no-repeat;mask:var(--stop) center/contain no-repeat}
+  :root{
+    --mic:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z'/><path d='M5 11a7 7 0 0 0 14 0h-2a5 5 0 0 1-10 0H5z'/><path d='M11 18h2v3h-2z'/><path d='M8 21h8v2H8z'/></svg>");
+    --stop:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='6' width='12' height='12' rx='2'/></svg>");
+  }
   button:disabled{opacity:.45;cursor:not-allowed}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
   .hint{font-size:12.5px;color:var(--mut)}
@@ -39,9 +48,17 @@
   .aks{display:flex;flex-wrap:wrap;gap:3px 2px;margin-bottom:8px}
   .ak{font-family:"Noto Serif Devanagari","Noto Serif Kannada","Noto Serif Telugu","Noto Serif Tamil","Noto Serif Malayalam","Noto Serif Bengali","Noto Sans Grantha","Siddhanta",serif;font-size:25px;line-height:1.15;padding:1px 3px;border-radius:6px}
   .ak.wb{margin-right:9px}
+  /* colour PLUS a non-colour cue (colour-blind safe): red = wavy underline (spellcheck-style
+     "error"), amber = dotted underline ("uncertain"), green = clean. */
   .ak.green{background:var(--grnbg);color:var(--grn)}
-  .ak.amber{background:var(--ambbg);color:var(--amb)}
-  .ak.red{background:var(--redbg);color:var(--red)}
+  .ak.amber{background:var(--ambbg);color:var(--amb);text-decoration:underline dotted 2px;text-underline-offset:3px}
+  .ak.red{background:var(--redbg);color:var(--red);text-decoration:underline wavy 2px;text-underline-offset:3px}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--mut);margin-top:9px}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .lk{font-family:serif;font-size:15px;padding:0 3px;border-radius:4px}
+  .lk.green{background:var(--grnbg);color:var(--grn)}
+  .lk.amber{background:var(--ambbg);color:var(--amb);text-decoration:underline dotted 2px}
+  .lk.red{background:var(--redbg);color:var(--red);text-decoration:underline wavy 2px}
   .uctl{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   .uctl audio{height:34px}
   .noref{font-size:12.5px;color:var(--mut)}
@@ -74,6 +91,12 @@
   .clab{font-size:12px;color:var(--mut)}
   .mini{font-size:13px;font-weight:600;padding:6px 11px;border-radius:8px;background:#efe7db;color:var(--ink)}
   .mini.ovr{background:#e4f5ea;color:var(--grn)}
+  .ak.fixed{outline:2px dashed var(--grn);outline-offset:1px}
+  .corrhint{font-size:12.5px;color:var(--mut);margin:9px 0 3px}
+  .variant{margin:8px 0 2px;font-size:12.5px;color:var(--mut)}
+  .variant summary{cursor:pointer;color:var(--accent)}
+  .variant textarea{width:100%;min-height:44px;margin-top:6px;border:1px solid var(--line);border-radius:8px;
+    padding:7px;font-family:"Noto Serif Devanagari","Noto Serif Kannada","Noto Serif Telugu",serif;font-size:16px}
   .hdr{text-align:center;margin:6px 0 16px}
   .hdr h1{font-size:30px;margin:0;letter-spacing:.5px}
   .hdr .dv{font-family:"Noto Serif Devanagari",serif;font-size:17px;color:var(--accent);margin-top:1px}
@@ -88,6 +111,15 @@
   .scard .sp{font-family:"Noto Serif Devanagari","Noto Serif Kannada","Noto Serif Telugu","Noto Serif Tamil","Noto Serif Malayalam","Siddhanta",serif;
              font-size:17px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .disclaimer{margin-top:28px;padding-top:13px;border-top:1px solid var(--line);font-size:11.5px;color:var(--mut);text-align:center;line-height:1.5}
+  .envnote{margin:2px 0 3px;font-size:13px;color:var(--accent);font-weight:500}
+  .vnote{margin:0 0 16px;font-size:12.5px;color:var(--mut)}
+  @media(max-width:560px){
+    .wrap{padding:18px 12px 80px}
+    .hdr h1{font-size:26px} .tag{font-size:13px} .ak{font-size:22px}
+    .row{gap:7px} .seg label{padding:7px 10px;font-size:13px}
+    .uctl{align-items:stretch} .uctl audio{width:100%}
+    button{padding:9px 13px} textarea{font-size:17px}
+  }
   .genlab{font-size:13px;color:var(--mut);margin-bottom:5px}
   .limit{color:var(--accent);font-weight:600}
 </style>
@@ -97,10 +129,11 @@
   <div class="hdr">
     <h1>Vāgbodhinī</h1>
     <div class="dv">वाग्बोधिनी</div>
-    <p class="tagline">A vṛtta (metre) aware śloka-to-chant text-to-speech system for Sanskrit</p>
     <p class="author">Prof. Prathosh A P · Indian Institute of Science, Bengaluru</p>
   </div>
   <p class="sub">Paste a śloka in any script, hear the reference chant, then chant along for per-syllable feedback.</p>
+  <p class="envnote">🎧 Best with headphones in a quiet, noise-free environment.</p>
+  <p class="vnote">For classical (laukika) Sanskrit — not intended for Vedic texts (svara/accented recitation).</p>
 
   <div class="card">
     <textarea id="txt" placeholder="Paste a śloka in any script — Devanāgarī, Kannada, Telugu, Tamil, Malayalam, Grantha, or Roman (IAST/HK/ITRANS). Keep the daṇḍas (। ॥)."></textarea>
@@ -114,8 +147,15 @@
         <div class="etext" id="echo"></div></div>
     </div>
     <div class="row">
+      <span class="hint">Type:</span>
+      <span class="seg" id="kindsel" title="Śloka: metre-aware chant, split by pāda. Prose: recitation (gadya), split by phrase.">
+        <label class="on" data-k="shloka">Śloka (chant)</label>
+        <label data-k="prose">Prose (recite)</label>
+      </span>
+    </div>
+    <div class="row">
       <button class="primary" id="go">Prepare &amp; generate</button>
-      <span class="hint" id="ghint">Splits pādas by metre and synthesises reference chants for all levels.</span>
+      <span class="hint" id="ghint">Detects metre/script and synthesises the reference for every level.</span>
     </div>
     <div class="msg" id="msg"></div>
   </div>
@@ -124,11 +164,7 @@
 
   <div class="row" id="levelbar" style="display:none;margin:0 0 6px">
     <span class="hint">Practise by:</span>
-    <span class="seg" id="gran">
-      <label class="on" data-lv="pada">Pāda (¼)</label>
-      <label data-lv="ardha">Ardha (½)</label>
-      <label data-lv="full">Full śloka</label>
-    </span>
+    <span class="seg" id="gran"></span>
     <span class="hint" style="margin-left:10px">Feedback:</span>
     <span class="seg" id="strictsel" title="Strict: every syllable must be recognised. Liberal: flag only clear mistakes.">
       <label class="on" data-m="strict">Be-strict</label>
@@ -142,19 +178,34 @@
     </span>
   </div>
   <div id="units"></div>
-  <div class="disclaimer">By using this service you are consenting for usage of this data for improving the model.</div>
+  <div class="disclaimer">Your recordings are stored and, by using this service, you consent to their use for improving the model.</div>
 </div>
 
 <script>
 const API="";
 let UNITS=[], rec=null, chunks=[], stream=null, recUnit=-1;
 const $=id=>document.getElementById(id);
-let LEVELS={}, curLevel="pada", curScript="devanagari", curMode="strict", curSpeed=1, detT=null, pickerReady=false;
+// anonymous per-visit session id — groups one person's takes WITHOUT storing any identity
+const SESSION = (Date.now().toString(36) + Math.random().toString(36).slice(2,8));
+let LEVELS={}, curLevel="pada", curScript="devanagari", curMode="strict", curSpeed=1, curKind="shloka", detT=null, pickerReady=false;
+const LVNAME={pada:"Pāda (¼)", ardha:"Ardha (½)", full:"Full śloka", phrase:"Phrase", all:"Full passage"};
 
-document.querySelectorAll("#gran label").forEach(l=>l.onclick=()=>{
-  document.querySelectorAll("#gran label").forEach(x=>x.classList.remove("on")); l.classList.add("on");
-  curLevel=l.dataset.lv; UNITS=LEVELS[curLevel]||[]; renderUnits();
+document.querySelectorAll("#kindsel label").forEach(l=>l.onclick=()=>{
+  if(l.dataset.k===curKind) return;
+  document.querySelectorAll("#kindsel label").forEach(x=>x.classList.remove("on")); l.classList.add("on");
+  curKind=l.dataset.k;
+  if($("samples").style.display!=="none") renderSamples();   // show kind-appropriate examples
+  if($("levelbar").style.display!=="none" && $("txt").value.trim()) runGenerate();  // re-generate under new mode
 });
+function renderGranBar(keys){                       // build the level toggle from the returned levels
+  const g=$("gran"); g.innerHTML="";
+  keys.forEach((k,i)=>{ const l=document.createElement("label"); if(i===0) l.className="on";
+    l.textContent=LVNAME[k]||k; l.dataset.lv=k;
+    l.onclick=()=>{ document.querySelectorAll("#gran label").forEach(x=>x.classList.remove("on")); l.classList.add("on");
+      curLevel=k; UNITS=LEVELS[curLevel]||[]; renderUnits(); };
+    g.appendChild(l); });
+  curLevel=keys[0];
+}
 document.querySelectorAll("#strictsel label").forEach(l=>l.onclick=()=>{
   document.querySelectorAll("#strictsel label").forEach(x=>x.classList.remove("on")); l.classList.add("on");
   curMode=l.dataset.m;
@@ -166,17 +217,23 @@ document.querySelectorAll("#speedsel label").forEach(l=>l.onclick=()=>{
   document.querySelectorAll("#units audio").forEach(a=>{ a.preservesPitch=true; a.playbackRate=curSpeed; });
 });
 
-// ---- sample ślokas (diverse metres + scripts) ----
-const SAMPLES=[
-  {sl:"Kṛṣṇa dhyāna",sm:"anuṣṭubh · Devanāgarī",text:"वसुदेवसुतं देवं कंसचाणूरमर्दनम् ।\nदेवकीपरमानन्दं कृष्णं वन्दे जगद्गुरुम् ॥"},
-  {sl:"Hari maṅgala",sm:"śārdūlavikrīḍita · Kannada ಕನ್ನಡ",text:"ಲಕ್ಷ್ಮೀರ್ಯಸ್ಯ ಪರಿಗ್ರಹಃ ಕಮಲಭೂಃ ಸೂನುರ್ಗರುತ್ಮಾನ್ ರಥಃ\nಪೌತ್ರಶ್ಚಂದ್ರವಿಭೂಷಣಃ ಸುರಗುರು ಶೇಷಶ್ಚ ಶಯ್ಯಾ ಪುನಃ ।\nಬ್ರಹ್ಮಾಂಡಂ ವರಮಂದಿರಂ ಸುರಗಣಾಃ ಯಸ್ಯ ಪ್ರಭೋಃ ಸೇವಕಾಃ\nಸ ತ್ರೈಲೋಕ್ಯಕುಟುಂಬಪಾಲನಪರಃ ಕುರ್ಯಾದ್ಧರಿರ್ಮಂಗಲಮ್ ॥"},
-  {sl:"Narasiṃha stuti (tongue-twister)",sm:"mālinī · Devanāgarī",text:"हठलुठ दल घिष्टोत्कण्ठदष्टोष्ठ विद्युत्\nसटशठ कठिनोरः पीठभित्सुष्ठुनिष्ठाम् ।\nपठतिनुतव कण्ठाधिष्ठ घोरान्त्रमाला\nदह दह नरसिंहासह्यवीर्याहितं मे ॥"},
-  {sl:"Guru stotra",sm:"anuṣṭubh · Kannada ಕನ್ನಡ",text:"ಗುರುರ್ಬ್ರಹ್ಮಾ ಗುರುರ್ವಿಷ್ಣುಃ ಗುರುರ್ದೇವೋ ಮಹೇಶ್ವರಃ ।\nಗುರುಃ ಸಾಕ್ಷಾತ್ ಪರಂ ಬ್ರಹ್ಮ ತಸ್ಮೈ ಶ್ರೀಗುರವೇ ನಮಃ ॥"},
-  {sl:"Sarasvatī vandana",sm:"anuṣṭubh · Telugu తెలుగు",text:"సరస్వతి నమస్తుభ్యం వరదే కామరూపిణి ।\nవిద్యారమ్భం కరిష్యామి సిద్ధిర్భవతు మే సదా ॥"},
-];
+// ---- samples: ślokas (diverse metres + scripts) and prose passages ----
+const SAMPLES={
+  shloka:[
+    {sl:"Kṛṣṇa dhyāna",sm:"anuṣṭubh · Devanāgarī",text:"वसुदेवसुतं देवं कंसचाणूरमर्दनम् ।\nदेवकीपरमानन्दं कृष्णं वन्दे जगद्गुरुम् ॥"},
+    {sl:"Hari maṅgala",sm:"śārdūlavikrīḍita · Kannada ಕನ್ನಡ",text:"ಲಕ್ಷ್ಮೀರ್ಯಸ್ಯ ಪರಿಗ್ರಹಃ ಕಮಲಭೂಃ ಸೂನುರ್ಗರುತ್ಮಾನ್ ರಥಃ\nಪೌತ್ರಶ್ಚಂದ್ರವಿಭೂಷಣಃ ಸುರಗುರು ಶೇಷಶ್ಚ ಶಯ್ಯಾ ಪುನಃ ।\nಬ್ರಹ್ಮಾಂಡಂ ವರಮಂದಿರಂ ಸುರಗಣಾಃ ಯಸ್ಯ ಪ್ರಭೋಃ ಸೇವಕಾಃ\nಸ ತ್ರೈಲೋಕ್ಯಕುಟುಂಬಪಾಲನಪರಃ ಕುರ್ಯಾದ್ಧರಿರ್ಮಂಗಲಮ್ ॥"},
+    {sl:"Narasiṃha stuti (tongue-twister)",sm:"mālinī · Devanāgarī",text:"हठलुठ दल घिष्टोत्कण्ठदष्टोष्ठ विद्युत्\nसटशठ कठिनोरः पीठभित्सुष्ठुनिष्ठाम् ।\nपठतिनुतव कण्ठाधिष्ठ घोरान्त्रमाला\nदह दह नरसिंहासह्यवीर्याहितं मे ॥"},
+    {sl:"Guru stotra",sm:"anuṣṭubh · Kannada ಕನ್ನಡ",text:"ಗುರುರ್ಬ್ರಹ್ಮಾ ಗುರುರ್ವಿಷ್ಣುಃ ಗುರುರ್ದೇವೋ ಮಹೇಶ್ವರಃ ।\nಗುರುಃ ಸಾಕ್ಷಾತ್ ಪರಂ ಬ್ರಹ್ಮ ತಸ್ಮೈ ಶ್ರೀಗುರವೇ ನಮಃ ॥"},
+    {sl:"Sarasvatī vandana",sm:"anuṣṭubh · Telugu తెలుగు",text:"సరస్వతి నమస్తుభ్యం వరదే కామరూపిణి ।\nవిద్యారమ్భం కరిష్యామి సిద్ధిర్భవతు మే సదా ॥"},
+  ],
+  prose:[
+    {sl:"Janmādyasya (Brahmasūtra)",sm:"gadya · Devanāgarī",text:"जन्माद्यस्य यतः ॥"},
+    {sl:"Bhāgavata gadya",sm:"gadya · Devanāgarī",text:"सत्यमुक्तं किन्त्विह वा एके मनसो विस्रम्भमनवस्थानस्य घटकिराट इव न सङ्गच्छन्ति ॥"},
+  ],
+};
 function renderSamples(){
   const box=$("samples"); box.innerHTML='<div class="stitle">Try a sample</div>';
-  SAMPLES.forEach(s=>{ const d=document.createElement("div"); d.className="scard";
+  (SAMPLES[curKind]||[]).forEach(s=>{ const d=document.createElement("div"); d.className="scard";
     d.innerHTML='<div class="sm">'+s.sm+'</div><div class="sl">'+s.sl+'</div><div class="sp">'+s.text.split("\n")[0]+'</div>';
     d.onclick=()=>{ $("txt").value=s.text; $("samples").style.display="none"; runDetect(); window.scrollTo({top:0,behavior:"smooth"}); };
     box.appendChild(d); });
@@ -200,11 +257,12 @@ async function runDetect(override){
 }
 $("scriptsel").onchange=()=>runDetect($("scriptsel").value);
 
-$("go").onclick = async () => {
+$("go").onclick = runGenerate;
+async function runGenerate(){
   const text=$("txt").value.trim(); if(!text) return;
   $("units").innerHTML=""; $("levelbar").style.display="none";
   $("msg").innerHTML='<div class="genlab" id="genlab">Preparing…</div><div class="meter"><div class="mfill" id="genfill"></div></div>';
-  const fd=new FormData(); fd.append("text",text); fd.append("script",curScript);
+  const fd=new FormData(); fd.append("text",text); fd.append("script",curScript); fd.append("kind",curKind);
   let resp; try{ resp=await fetch(API+"/generate",{method:"POST",body:fd}); }
   catch(e){ $("msg").textContent="Generation failed."; return; }
   if(!resp.ok){ let m="Generation failed."; try{ const j=await resp.json(); m=j.message||j.error||m; }catch(e){}
@@ -221,14 +279,14 @@ $("go").onclick = async () => {
       if(ev.type==="plan"){ curScript=ev.script; remaining=ev.remaining; setp(0,ev.total); }
       else if(ev.type==="progress"){ setp(ev.done,ev.total); }
       else if(ev.type==="done"){
-        LEVELS=ev.levels; UNITS=LEVELS[curLevel]||[];
-        let note = ev.tts_ok ? "" : '⚠️ Reference audio unavailable (TTS offline) — you can still chant & get feedback.';
-        if(ev.tts_ok && remaining!=null) note='<span style="color:var(--mut);font-size:12px">'+remaining+' ślokas left today</span>';
+        LEVELS=ev.levels; renderGranBar(Object.keys(LEVELS)); UNITS=LEVELS[curLevel]||[];
+        let note = ev.tts_ok ? "" : '⚠️ Reference audio unavailable (TTS offline) — you can still recite & get feedback.';
+        if(ev.tts_ok && remaining!=null) note='<span style="color:var(--mut);font-size:12px">'+remaining+' left today</span>';
         $("msg").innerHTML=note; $("levelbar").style.display="flex"; renderUnits();
       }
     }
   } }catch(e){ $("msg").textContent="Generation interrupted."; }
-};
+}
 
 function renderUnits(){
   lastWav={}; lastBlob={};                         // per-view attempts; avoid stale cross-level indices
@@ -315,14 +373,19 @@ function encodeWav(s,sr){
   let o=44; for(let i=0;i<s.length;i++){ let x=Math.max(-1,Math.min(1,s[i])); v.setInt16(o,x<0?x*0x8000:x*0x7fff,true); o+=2; }
   return new Blob([b],{type:"audio/wav"});
 }
-let lastWav={}, lastBlob={};
+let lastWav={}, lastBlob={}, lastScore={}, corrected={};
 async function score(ui,wavBlob){
   const u=UNITS[ui]; const res=$("ures-"+ui); res.style.display="block"; res.innerHTML='<span class="spin"></span>Scoring…';
   lastWav[ui]=URL.createObjectURL(wavBlob); lastBlob[ui]=wavBlob;
-  const fd=new FormData(); fd.append("audio",wavBlob,"a.wav"); fd.append("text",u.text); fd.append("script",curScript); fd.append("mode",curMode);
-  let j; try{ j=await (await fetch(API+"/score",{method:"POST",body:fd})).json(); }
-  catch(e){ res.textContent="Scoring failed."; return; }
-  if(j.error){ res.textContent=j.error; return; }
+  const fd=new FormData(); fd.append("audio",wavBlob,"a.wav"); fd.append("text",u.text); fd.append("script",curScript); fd.append("mode",curMode); fd.append("session",SESSION);
+  var degraded='<div class="rectxt" style="color:var(--amb)">Automatic feedback is unavailable right now — the reference chant still works. Play both and compare.</div>'
+    +'<div class="compare"><span class="clab">compare:</span><button class="mini" onclick="play(\''+lastWav[ui]+'\')">▶ your chant</button>'
+    +(u.wav_url?'<button class="mini" onclick="play(\''+u.wav_url+'\')">▶ reference</button>':'')+'</div>';
+  let j; try{ const r=await fetch(API+"/score",{method:"POST",body:fd});
+    if(r.status===503){ res.innerHTML=degraded; return; }   // ASR down -> degrade to listen & compare
+    j=await r.json(); }
+  catch(e){ res.innerHTML=degraded; return; }
+  if(j.error){ if(j.error==="scoring_unavailable"){ res.innerHTML=degraded; } else { res.textContent=j.error; } return; }
   paintChips(ui,j.aksharas);
   const judged=(j.n_ok||0)+(j.n_red||0);
   const compare='<div class="compare"><span class="clab">compare:</span>'
@@ -335,26 +398,58 @@ async function score(ui,wavBlob){
   }
   const col=j.percent>=85?"var(--grn)":j.percent>=65?"var(--amb)":"var(--red)";
   const parts=[]; if(j.n_red) parts.push(j.n_red+" to fix"); if(j.n_amber) parts.push(j.n_amber+" unclear — repeat"); if(!parts.length) parts.push("all clear");
+  lastScore[ui]=j; corrected[ui]=new Set();
+  const legend='<div class="legend"><span><b class="lk green">क</b> good</span>'
+    +'<span><b class="lk amber">क</b> unclear</span><span><b class="lk red">क</b> to fix</span></div>';
+  const flagged = j.aksharas.filter(a=>a.band!=="green").length;
+  var help = flagged
+    ? '<div class="corrhint">Heard something wrong? <b>Tap the flagged syllables you actually chanted correctly</b> — it teaches the model.</div>'
+    : '';
   res.innerHTML='<span class="pct" style="color:'+col+'">'+j.percent+'%</span><span style="color:var(--mut)">correct · '+parts.join(" · ")+'</span>'
-    +compare+heardline
-    +'<div style="margin-top:8px"><button class="mini ovr" onclick="saidRight('+ui+')">✓ I chanted this correctly</button></div>';
+    +legend+compare+heardline+help
+    +'<details class="variant"><summary>I chanted a different reading (pāṭha-bheda)</summary>'
+      +'<textarea id="corr-'+ui+'" placeholder="Type what you actually chanted, in any script"></textarea></details>'
+    +'<div style="margin-top:8px" id="corrbar-'+ui+'">'
+      + (flagged?'<button class="mini ovr" onclick="submitCorrection('+ui+')">Submit correction</button> ':'')
+      + '<button class="mini" onclick="saidRight('+ui+')">✓ I chanted all of this correctly</button></div>';
 }
 function paintChips(ui,aksr){
   const chips=$("aks-"+ui).children;
-  for(let k=0;k<chips.length;k++){ chips[k].classList.remove("green","amber","red"); const r=aksr[k];
-    if(r){ chips[k].classList.add(r.band);
-      chips[k].title = r.heard ? ("heard: "+r.heard) : r.band==="amber" ? "unclear — try again" : ""; } }
+  for(let k=0;k<chips.length;k++){ const c=chips[k]; c.classList.remove("green","amber","red","fixed"); const r=aksr[k];
+    if(r){ c.classList.add(r.band);
+      c.title = r.heard ? ("heard: "+r.heard) : r.band==="amber" ? "unclear — try again" : "";
+      c.onclick = (r.band!=="green") ? (function(kk){ return function(){ toggleFix(ui,kk,this); }; })(k) : null;
+      c.style.cursor = (r.band!=="green") ? "pointer" : ""; } }
+}
+function toggleFix(ui,k,el){
+  var s=corrected[ui]; if(s.has(k)){ s.delete(k); el.classList.remove("fixed"); }
+  else { s.add(k); el.classList.add("fixed"); }
 }
 function play(u){ const a=new Audio(u); a.preservesPitch=true; a.playbackRate=curSpeed; a.play(); }
+async function postFeedback(ui, payload, done){
+  try{ const blob=await (await fetch(lastWav[ui])).blob();
+    const fd=new FormData(); fd.append("audio",blob,"a.wav"); fd.append("script",curScript); fd.append("session",SESSION);
+    for(var k in payload) fd.append(k, payload[k]);
+    await fetch(API+"/feedback",{method:"POST",body:fd});
+  }catch(e){}
+  if(done) done();
+}
+function submitCorrection(ui){
+  const u=UNITS[ui], j=lastScore[ui], s=corrected[ui];
+  const corr = j.aksharas.map((a,k)=>({i:k, ref:UNITS[ui].aksharas[k]?UNITS[ui].aksharas[k].text:"",
+                                       heard:a.heard||"", band:a.band, ok:s.has(k)}));
+  const variant = (($("corr-"+ui)||{}).value||"").trim();
+  // recolour tapped syllables green
+  const chips=$("aks-"+ui).children; s.forEach(k=>{ chips[k].classList.remove("amber","red"); chips[k].classList.add("green"); });
+  postFeedback(ui, {reference:u.text, kind: variant?"text_correction":"syllable_correction",
+                    corrections: JSON.stringify(corr), corrected_text: variant},
+    ()=>{ $("corrbar-"+ui).innerHTML='<span style="color:var(--grn)">Thank you — your correction helps improve the model.</span>'; });
+}
 async function saidRight(ui){
   const u=UNITS[ui];
-  // recolour all green, mark 100%
   const chips=$("aks-"+ui).children; for(let k=0;k<chips.length;k++){ chips[k].classList.remove("amber","red"); chips[k].classList.add("green"); chips[k].title=""; }
-  $("ures-"+ui).innerHTML='<span class="pct" style="color:var(--grn)">100%</span><span style="color:var(--mut)">marked correct — thank you (helps us improve)</span>';
-  try{ const blob=await (await fetch(lastWav[ui])).blob();
-    const fd=new FormData(); fd.append("audio",blob,"a.wav"); fd.append("reference",u.text); fd.append("script",curScript); fd.append("kind","said_right");
-    fetch(API+"/feedback",{method:"POST",body:fd});
-  }catch(e){}
+  postFeedback(ui, {reference:u.text, kind:"said_right"},
+    ()=>{ $("ures-"+ui).innerHTML='<span class="pct" style="color:var(--grn)">100%</span><span style="color:var(--mut)">marked correct — thank you (helps us improve)</span>'; });
 }
 renderSamples();
 </script>
