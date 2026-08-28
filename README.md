@@ -5,17 +5,20 @@ an interactive chant-practice tool built on it. This repository documents the fu
 experiments — including the ones that **did not** work, which were as instructive as the ones
 that did.
 
-- **ASR model:** IndicConformer-CTC (Sanskrit slice). "v5" is the studio-finetuned base (on HF);
-  **v11-ep3** is the current *deployed* model — v5 continued on real user data (see §5b).
+- **ASR model:** IndicConformer-CTC (Sanskrit slice). "v5" is the studio-finetuned base; **v13b-ep3**
+  is the current *deployed* model — v5 continued on consented real-user data (see §5b). Both are on
+  [Hugging Face](https://huggingface.co/prathoshap/sushrota-sanskrit-asr), with the
+  [training dataset](https://huggingface.co/datasets/prathoshap/sushrota-sanskrit-asr-data).
 - **Live tools:** **[Vāgbodhinī](https://prathosh.in/vagbodhini/)** (chant/prose tutor) and
   **[Su-śrotā](https://prathosh.in/sushrotaa/)** (dictation/transcription) — both serve the *same*
   shared core ASR and both collect consented data that improves it.
 - **Author:** Prof. Prathosh A P, Indian Institute of Science, Bengaluru.
 
-> **Headline result (§5b):** the model was only *saturated on clean studio audio*. On **real,
-> in-the-wild user audio it had huge headroom (24% CER)** — and a small batch of consented
-> user recordings closed a third of it (**24% → 16% CER, 86% → 34% WER**) with no loss on the
-> studio benchmarks. The data flywheel works.
+> **Headline result (§5b):** the model looked *saturated on studio audio (~6% CER)* — but on **real,
+> in-the-wild user audio it had large headroom**, and a consented **data flywheel** closed most of it.
+> On a 327-clip leakage-free in-the-wild held-out, the deployed model cuts CER **7.7% → 4.4% (−43%)**
+> and WER **45% → 30%** vs the studio-only base, with **no loss** on studio/chant/prose benchmarks.
+> The flywheel now spans **~13,100 consented clips from ~1,500 users across 11 scripts**.
 
 ---
 
@@ -65,7 +68,8 @@ The gap between WER and SN-WER quantifies point (1): roughly **half of Sanskrit 
   head** on the Sanskrit token slice (`cols = [BLANK] + range(4096,4352)`, re-`log_softmax`), greedy
   decode.
 - **Training data (v5):** recitation + disk-prose + TTS-speaker slice.
-- **Result:** the shipped model — chant CER **6.0%**. Weights on Hugging Face (see §7).
+- **Result:** the studio base — chant CER **6.0%**; later continued on consented user data into the
+  deployed **v13b-ep3** (§5b). Weights on Hugging Face (see §7).
 
 ---
 
@@ -90,9 +94,11 @@ A compressed log of the campaign. **Bold = shipped / kept.**
 | 13 | Baselines | Whisper-sa, wav2vec2 finetunes | v5 (IndicConformer-CTC) remained the best on chant/prose |
 | 14 | **GOP forced alignment** | Goodness-of-Pronunciation for chant scoring | validated (AUC 0.97–0.99) but too false-positive-prone for a tutor → superseded |
 | 15 | **Vāgbodhinī chant tool** | exploit the *known reference* text: verify, don't transcribe | **shipped** (see §6) |
-| 16 | **Consented data flywheel** | collect real user audio + labels from the live tools, tiered by trust | **shipped; ~2.6k clips / 560 users in a week** |
+| 16 | **Consented data flywheel** | collect real user audio + labels from the live tools, tiered by trust | **shipped; grew to ~13.1k clips / ~1,500 users / 11 scripts** |
 | 17 | v10 flywheel retrain (wholesale) | finetune v5-recipe + flywheel from base, 20 ep | in-the-wild CER 24→16 (big), but **gold regressed** 3.6→6.1 (distribution shift) |
-| 18 | **v11 flywheel retrain (domain-balanced)** | continue *from v5*, low LR, few epochs, flywheel upsampled | **shipped as v11-ep3** — in-the-wild 24→**15.6**, gold recovered to 4.6, chant/prose flat (see §5b) |
+| 18 | v11 flywheel retrain (domain-balanced) | continue *from v5*, low LR, few epochs, flywheel upsampled | first balanced retrain; superseded by v12/v13b as the flywheel grew |
+| 19 | **v12 / v13 / v13b retrains** | same balanced recipe on the grown flywheel; validated on a 327-clip leakage-free held-out | **shipped as v13b-ep3** — in-the-wild CER **4.36** (beats v5 7.70 and v12-ep9 5.19); studio/chant/prose flat |
+| 20 | Review-tier rescue audit | re-decode quarantined `review` clips with the current model; promote only perfect re-matches | **only 4.3% recoverable** → auto-grader validated: the pile is genuine reader deviations, not model error |
 
 ---
 
@@ -118,33 +124,42 @@ A compressed log of the campaign. **Bold = shipped / kept.**
 
 Once the live tools were public, every consented recording was logged with its label, **tiered by
 trustworthiness** (`pass` ≥90% match · `override`/`corrected` = human-verified · `review` ·
-`low`/`unclear` = archived). In one week: **~2,650 clips from ~560 users across 9 scripts** (a third
-non-Devanāgarī), plus **~150 human corrections**.
+`low`/`unclear` = archived). It has since grown to **~13,100 clips from ~1,500 users across 11
+scripts** (a third non-Devanāgarī), including **~420 human corrections**.
 
-We then held out flywheel data **by session** (no speaker leakage) as a fourth eval set — the *real
-in-the-wild distribution* — and retrained.
+We hold out flywheel data **by session** (no speaker leakage) as an in-the-wild eval set — the *real
+deployment distribution* — and retrain periodically.
 
-**v5 vs the retrains (CER / WER):**
+**v5 vs the deployed v13b-ep3 (CER / WER):**
 
-| eval set | v5 | v10-ep20 (wholesale) | **v11-ep3 (balanced, shipped)** |
-|---|---|---|---|
-| gold (studio lecture) | 3.61 / 13.0 | 6.09 / 26.8 | **4.58 / 20.8** |
-| Bhāgavata chant | 6.00 / 46.4 | 5.94 / 45.9 | 6.05 / 46.9 |
-| Vedānta prose | 7.27 / 30.8 | 7.28 / 31.4 | 7.20 / 30.8 |
-| **flywheel (in-the-wild)** | **23.87 / 86.3** | 15.81 / 33.9 | **15.60 / 33.9** |
+| eval set | v5 (studio-only) | **v13b-ep3 (current, shipped)** |
+|---|---|---|
+| gold — studio lecture&nbsp;† | 3.61 / 13.0 | 4.40 / 20.2 |
+| Bhāgavata chant | 6.00 / 46.4 | 5.99 / 46.3 |
+| Vedānta prose | 7.27 / 30.8 | 7.23 / 30.4 |
+| **in-the-wild (327-clip leakage-free held-out)** | **7.70 / 45.4** | **4.36 / 30.4** |
+
+† The `gold` studio set was transcribed by correcting v5's *own* drafts, so v5 is flattered there —
+it is not a fair cross-model set. The unanchored comparisons are chant/prose (independent
+forced-align references) and the in-the-wild held-out.
 
 **Findings:**
-1. **v5 was terrible in-the-wild (24% CER, 86% WER)** — phone mics, real accents, diverse speakers
-   are far out of a studio-trained model's comfort zone. The "saturation" was studio-only.
-2. **A small batch of consented user audio closed a third of that gap** (24 → 16 CER, 86 → 34 WER),
-   with chant/prose flat.
-3. **Recipe matters.** A *wholesale* finetune (v10, from base, 20 epochs) let ~400 flywheel clips
-   over-pull the model and **regressed gold** (3.6 → 6.1). A **domain-balanced** recipe (v11:
-   continue from v5, low LR, few epochs, flywheel upsampled) kept the in-the-wild gain **and**
-   recovered gold to 4.6. The flywheel gain **saturates in ~3 gentle epochs**; more only erodes gold.
-4. For the live tools — which only ever see in-the-wild audio — **v11-ep3 is strictly better**, so it
-   is deployed. Scripts: `scripts/v10_prep.py`, `scripts/v11_prep.py`, `scripts/v11_run.sh`,
-   `scripts/harvest_flywheel.py`.
+1. **v5 had large in-the-wild headroom.** On real user audio (phone mics, diverse speakers, rooms) it
+   ran at 7.7% CER / 45% WER — far from its ~6% studio "ceiling". The saturation was studio-only.
+2. **Consented flywheel data nearly halved that** — in-the-wild CER **7.70 → 4.36 (−43%)**, WER 45 →
+   30 — with **chant and prose unchanged** (6.00→5.99, 7.27→7.23). Real robustness gained at no
+   studio cost.
+3. **Recipe matters, and small held-outs mislead.** A *wholesale* retrain (v10, from base, 20 ep) let
+   flywheel clips over-pull the model and regressed studio audio; a **domain-balanced** recipe
+   (continue from v5, low LR, ~3 epochs, flywheel upsampled) keeps the in-the-wild gain and holds
+   studio. An early 48-clip held-out suggested ~24% in-the-wild CER; a larger **327-clip
+   leakage-free** held-out showed that sample was unusually hard — the real figure is ~5–8%.
+   Proper-sized, leakage-free evaluation is now standard.
+4. **The auto-grader is trustworthy.** Re-decoding every quarantined `review` clip with the current
+   model recovered only **4.3%** as model error — the other ~96% are genuine reader deviations, so
+   the tiering hides no reservoir of usable data. The next lever is **new/diverse** data, not more of
+   the same. Scripts: `scripts/v11_prep.py`, `scripts/v13b_prep.py`, `scripts/rescue.py`,
+   `scripts/flywheel_clean.py`, `scripts/harvest_flywheel.py`.
 
 **The loop, closed and self-improving:** better model → better live scoring → cleaner tiered data →
 a better next model. Both tools feed one shared core ASR (`ft_ctc_current`), so they always update
@@ -182,13 +197,20 @@ See `docs/` for the full system spec (services, ports, endpoints, data format).
 
 ## 7. Model weights
 
-The studio-finetuned **v5** Sanskrit ASR (IndicConformer-CTC) is on Hugging Face:
+The Sanskrit ASR weights (IndicConformer-CTC) are on Hugging Face:
 
-> **`prathoshap/sushrota-sanskrit-asr`** *(see the HF model card for usage)*
+> **[`prathoshap/sushrota-sanskrit-asr`](https://huggingface.co/prathoshap/sushrota-sanskrit-asr)**
+> — `sushrota_sanskrit_asr_v13b.nemo` is the **deployed** model (v13b-ep3: v5 continued on consented
+> user data, §5b); `sushrota_sanskrit_asr_v5.nemo` is the studio-only base. *(See the model card for
+> usage.)*
 
-The **deployed** model is **v11-ep3** — v5 continued on consented user data (§5b), better on the
-in-the-wild distribution the live tools serve. The metre-aware TTS for reference chants,
-**Vāgdhenu**, is separately at `prathoshap/vagdhenu`.
+The **training data** (17.4 h / 6,438 utterances + a 327-clip in-the-wild benchmark) is released as a
+dataset:
+
+> **[`prathoshap/sushrota-sanskrit-asr-data`](https://huggingface.co/datasets/prathoshap/sushrota-sanskrit-asr-data)**
+
+The metre-aware TTS for reference chants, **Vāgdhenu**, is separately at
+[`prathoshap/vagdhenu`](https://huggingface.co/prathoshap/vagdhenu).
 
 ---
 
