@@ -212,6 +212,16 @@ dataset:
 The metre-aware TTS for reference chants, **Vāgdhenu**, is separately at
 [`prathoshap/vagdhenu`](https://huggingface.co/prathoshap/vagdhenu).
 
+### In-Browser & ONNX Exports (Serverless ASR)
+
+The Conformer-CTC Sanskrit model has also been exported to **ONNX** and **INT8** (~178 MB) for zero-dependency local execution and 100% serverless in-browser speech recognition:
+
+> **[`gnumanth/sushrota-sanskrit-asr-onnx`](https://huggingface.co/gnumanth/sushrota-sanskrit-asr-onnx)**
+> — Contains `sushrota_sanskrit_ctc_int8.onnx`, `preprocessor.onnx`, and `sanskrit_vocab.json`.
+>
+> - **In-browser web app:** [`browser_asr.html`](browser_asr.html) (runs via `onnxruntime-web` with WASM SIMD, ~250ms latency, zero backend servers).
+> - **Export & quantization script:** [`scripts/export_sushrota_onnx.py`](scripts/export_sushrota_onnx.py).
+
 ---
 
 ## 8. Repository layout

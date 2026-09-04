@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="sa">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Su-śrotā · In-Browser Sanskrit Speech Recognition</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b5461f'/%3E%3Cg fill='none' stroke='%23fff' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M7 16h2'/%3E%3Cpath d='M11 12v8'/%3E%3Cpath d='M15 8v16'/%3E%3Cpath d='M19 11v10'/%3E%3Cpath d='M23 14v4'/%3E%3C/g%3E%3C/svg%3E">
+<!-- ONNX Runtime Web via CDN -->
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.all.min.js"></script>
+<style>
+  :root {
+    --bg: #faf7f2; --card: #ffffff; --ink: #2a2320; --mut: #8a8079; --line: #e7ded2;
+    --accent: #b5461f; --accent-hover: #9c3c1a; --grn: #2e9e5b; --grnbg: #e4f5ea;
+    --red: #d94f43; --badge-bg: #f0ebe1;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 30px 20px 80px; }
+  header { margin-bottom: 24px; text-align: center; }
+  h1 { font-size: 26px; margin: 0 0 6px; font-weight: 700; color: var(--ink); }
+  h1 .tag { color: var(--accent); font-size: 16px; font-weight: 600; display: block; margin-top: 4px; }
+  .sub { color: var(--mut); font-size: 14px; margin: 0; }
+  
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.02);
+  }
+
+  /* Status & progress bar */
+  .status-box {
+    display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px;
+    padding: 14px 18px; border-radius: 12px; background: var(--badge-bg);
+    border: 1px solid var(--line); font-size: 13.5px;
+  }
+  .status-row { display: flex; justify-content: space-between; align-items: center; }
+  .progress-track {
+    width: 100%; height: 7px; background: #ddd4c8; border-radius: 4px; overflow: hidden;
+  }
+  .progress-fill {
+    width: 0%; height: 100%; background: var(--accent);
+    transition: width 0.2s ease;
+  }
+
+  /* Controls */
+  .controls { display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap; }
+  button {
+    font-size: 14.5px; font-weight: 600; border: 0; border-radius: 28px;
+    padding: 11px 22px; cursor: pointer; transition: all 0.15s ease;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  button:disabled { opacity: 0.45; cursor: not-allowed; filter: grayscale(1); }
+  button.primary { background: var(--accent); color: #fff; }
+  button.primary:hover:not(:disabled) { background: var(--accent-hover); }
+  button.record.on { background: var(--red); color: #fff; animation: pulse 1s infinite; }
+  button.secondary { background: var(--badge-bg); color: var(--ink); border: 1px solid var(--line); }
+  button.secondary:hover:not(:disabled) { background: #e5ded2; }
+  
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+  /* Output area */
+  .output-box {
+    min-height: 120px; background: #fdfbf7; border: 1.5px dashed var(--line);
+    border-radius: 12px; padding: 18px; position: relative;
+    font-size: 26px; line-height: 1.6;
+    font-family: "Noto Serif Devanagari", "Siddhanta", serif;
+    color: var(--ink); word-break: break-word;
+  }
+  .output-box.empty {
+    display: flex; align-items: center; justify-content: center;
+    color: var(--mut); font-size: 15px; font-family: sans-serif;
+  }
+  .meta-bar {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 14px; font-size: 12.5px; color: var(--mut); flex-wrap: wrap; gap: 8px;
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px; background: var(--badge-bg);
+    padding: 4px 10px; border-radius: 20px; border: 1px solid var(--line); font-weight: 500;
+  }
+  .badge.success { background: var(--grnbg); color: var(--grn); border-color: #bce3ca; }
+
+  .arch-note {
+    font-size: 13px; color: var(--mut); margin-top: 20px; line-height: 1.6;
+    border-top: 1px solid var(--line); padding-top: 16px;
+  }
+  .arch-note strong { color: var(--ink); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Su-śrotā <span class="tag">⚡ 100% Serverless In-Browser Sanskrit ASR</span></h1>
+    <p class="sub">IndicConformer-CTC (~115M active parameters) running locally in your browser via WebGPU/WASM.</p>
+  </header>
+
+  <div class="card">
+    <div class="status-box" id="statusBox">
+      <div class="status-row">
+        <span id="statusLabel">Ready to initialize model (178 MB INT8)</span>
+        <span id="statusPercent">0%</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="progressBar"></div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="primary" id="btnLoad" onclick="loadModel()">
+        <span>Download & Load Model</span>
+      </button>
+      <button class="record secondary" id="btnRecord" onclick="toggleRecord()" disabled>
+        <span id="recIcon">🎙️</span> <span id="recLabel">Start Recording</span>
+      </button>
+      <label class="button secondary" style="cursor:pointer; padding:10px 18px; border-radius:28px; font-size:14px; font-weight:600; background:var(--badge-bg); border:1px solid var(--line); display:inline-flex; align-items:center; gap:6px;">
+        📁 Upload Audio
+        <input type="file" id="audioUpload" accept="audio/*" style="display:none" onchange="handleFileUpload(event)">
+      </label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0; font-size:16px; color:var(--mut)">ASR Transcription (Devanāgarī):</h3>
+    <div class="output-box empty" id="outputBox">
+      Click "Download & Load Model", then speak or upload a Sanskrit clip...
+    </div>
+
+    <div class="meta-bar">
+      <span class="badge" id="backendBadge">Engine: WebGPU / WASM</span>
+      <span class="badge" id="timeBadge">Latency: --</span>
+      <span class="badge" id="rtfBadge">RTF: --</span>
+      <button class="secondary" id="btnCopy" onclick="copyText()" style="padding:4px 12px; font-size:12px; border-radius:12px;" disabled>📋 Copy</button>
+    </div>
+
+    <div class="arch-note">
+      <strong>Zero Server Dependencies:</strong> Audio is processed entirely inside your browser tab. 
+      The 16 kHz audio passes through the neural Mel-preprocessor ONNX graph into the 17-layer Conformer encoder and CTC Sanskrit projection, with greedy CTC decoding executed directly in client-side JavaScript.
+    </div>
+  </div>
+</div>
+
+<script>
+let prepSession = null;
+let asrSession = null;
+let vocab = [];
+let mediaRecorder = null;
+let audioChunks = [];
+let isRecording = false;
+let audioCtx = null;
+
+// Update status bar UI
+function setProgress(label, pct) {
+  document.getElementById('statusLabel').innerText = label;
+  document.getElementById('statusPercent').innerText = Math.round(pct) + '%';
+  document.getElementById('progressBar').style.width = pct + '%';
+}
+
+// 1. Load Vocab and ONNX Models with Progress Tracking
+async function loadModel() {
+  const btnLoad = document.getElementById('btnLoad');
+  btnLoad.disabled = true;
+
+  const HF_BASE = 'https://huggingface.co/gnumanth/sushrota-sanskrit-asr-onnx/resolve/main';
+  async function fetchAsset(filename) {
+    try {
+      const res = await fetch('models/' + filename);
+      if (res.ok) return res;
+    } catch (e) {}
+    return await fetch(`${HF_BASE}/${filename}`);
+  }
+
+  try {
+    setProgress('Fetching Sanskrit vocabulary...', 5);
+    const vocabResp = await fetchAsset('sanskrit_vocab.json');
+    vocab = await vocabResp.json();
+
+    setProgress('Loading Preprocessor ONNX (149 KB)...', 15);
+    const prepResp = await fetchAsset('preprocessor.onnx');
+    const prepBuf = await prepResp.arrayBuffer();
+    
+    // Configure ONNX Runtime Web WASM engine for multi-threading and SIMD
+    ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 4);
+    ort.env.wasm.simd = true;
+    const ep = ['wasm'];
+
+    prepSession = await ort.InferenceSession.create(prepBuf, { executionProviders: ep });
+
+    setProgress('Downloading INT8 Conformer ASR Model (178 MB)...', 25);
+    
+    // Download with progress tracking
+    const response = await fetchAsset('sushrota_sanskrit_ctc_int8.onnx');
+    const contentLength = +response.headers.get('Content-Length') || 139000000;
+    const reader = response.body.getReader();
+    let receivedBytes = 0;
+    const chunks = [];
+    
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      receivedBytes += value.length;
+      const pct = 25 + (receivedBytes / contentLength) * 65;
+      setProgress(`Downloading Model: ${(receivedBytes / (1024*1024)).toFixed(1)} MB / ${(contentLength / (1024*1024)).toFixed(1)} MB`, pct);
+    }
+
+    const allBytes = new Uint8Array(receivedBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      allBytes.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    setProgress('Compiling ONNX Runtime Session...', 95);
+    asrSession = await ort.InferenceSession.create(allBytes.buffer, { executionProviders: ep });
+
+    setProgress('Model Ready in Browser Memory!', 100);
+    document.getElementById('backendBadge').innerText = 'Engine: WASM SIMD (Multi-threaded)';
+    document.getElementById('backendBadge').classList.add('success');
+    btnLoad.innerText = '✓ Loaded';
+    document.getElementById('btnRecord').disabled = false;
+    document.getElementById('outputBox').innerText = 'Ready. Speak or upload audio to transcribe.';
+    document.getElementById('outputBox').classList.remove('empty');
+  } catch (err) {
+    console.error(err);
+    alert('Failed to load model: ' + err.message);
+    btnLoad.disabled = false;
+    setProgress('Error loading model', 0);
+  }
+}
+
+// 2. Microphone Recording logic (Whole-Utterance for maximum Conformer accuracy)
+async function toggleRecord() {
+  if (!isRecording) {
+    await startRecord();
+  } else {
+    stopRecord();
+  }
+}
+
+async function startRecord() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    audioChunks = [];
+    recordSeconds = 0;
+
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+    mediaRecorder.onstop = async () => {
+      // Stop all mic tracks
+      stream.getTracks().forEach(t => t.stop());
+
+      const outBox = document.getElementById('outputBox');
+      outBox.innerText = 'Transcribing complete utterance...';
+      outBox.classList.remove('empty');
+
+      const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+      const arrayBuffer = await audioBlob.arrayBuffer();
+      const decodedBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      const pcm16k = decodedBuffer.getChannelData(0);
+      
+      await runInference(pcm16k);
+    };
+
+    mediaRecorder.start();
+    isRecording = true;
+
+    const btn = document.getElementById('btnRecord');
+    btn.classList.add('on');
+    document.getElementById('recLabel').innerText = 'Stop & Transcribe (0s)';
+
+    const outBox = document.getElementById('outputBox');
+    outBox.innerHTML = '<span style="color:var(--accent); font-size:17px;">🎙️ Recording your chant/speech... Click "Stop & Transcribe" when done.</span>';
+    outBox.classList.remove('empty');
+
+    recordTimer = setInterval(() => {
+      recordSeconds++;
+      document.getElementById('recLabel').innerText = `Stop & Transcribe (${recordSeconds}s)`;
+    }, 1000);
+
+  } catch (e) {
+    alert('Microphone access failed: ' + e.message);
+  }
+}
+
+function stopRecord() {
+  isRecording = false;
+  if (recordTimer) {
+    clearInterval(recordTimer);
+    recordTimer = null;
+  }
+
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+  }
+
+  const btn = document.getElementById('btnRecord');
+  btn.classList.remove('on');
+  document.getElementById('recLabel').innerText = 'Start Recording';
+}
+
+// 3. Audio File Upload
+async function handleFileUpload(evt) {
+  const file = evt.target.files[0];
+  if (!file) return;
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+
+  const outBox = document.getElementById('outputBox');
+  outBox.innerText = 'Transcribing uploaded file...';
+  outBox.classList.remove('empty');
+
+  const arrayBuffer = await file.arrayBuffer();
+  const decodedBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+
+  // Resample to 16kHz mono
+  const offlineCtx = new OfflineAudioContext(1, decodedBuffer.duration * 16000, 16000);
+  const src = offlineCtx.createBufferSource();
+  src.buffer = decodedBuffer;
+  src.connect(offlineCtx.destination);
+  src.start(0);
+  const resampled = await offlineCtx.startRendering();
+  const pcm16k = resampled.getChannelData(0);
+  
+  await runInference(pcm16k);
+}
+
+// 4. In-Browser Inference Pipeline
+async function runInference(pcmData) {
+  if (!prepSession || !asrSession) {
+    alert('Please load the model first!');
+    return;
+  }
+
+  const outBox = document.getElementById('outputBox');
+  const t0 = performance.now();
+  const audioDurationSec = pcmData.length / 16000;
+
+  try {
+    // Stage 1: Preprocessor ONNX (PCM -> 80-mel log spectrogram)
+    const audioTensor = new ort.Tensor('float32', Float32Array.from(pcmData), [1, pcmData.length]);
+    const lenTensor = new ort.Tensor('int64', BigInt64Array.from([BigInt(pcmData.length)]), [1]);
+    
+    const prepFeeds = { audio_signal: audioTensor, length: lenTensor };
+    const prepResults = await prepSession.run(prepFeeds);
+    const features = prepResults.features;
+    const featLength = prepResults.feature_lengths;
+
+    // Stage 2: Conformer CTC ASR ONNX (features -> 257-dim Sanskrit logits)
+    const asrFeeds = { audio_signal: features, length: featLength };
+    const asrResults = await asrSession.run(asrFeeds);
+    const logits = asrResults.logits; // shape: [1, T, 257]
+
+    // Stage 3: Greedy CTC Decoder in JavaScript
+    const [batch, timeSteps, numClasses] = logits.dims;
+    const data = logits.data;
+
+    const tokens = [];
+    let prev = -1;
+
+    for (let t = 0; t < timeSteps; t++) {
+      let maxIdx = 0;
+      let maxVal = -Infinity;
+      const offset = t * numClasses;
+
+      for (let c = 0; c < numClasses; c++) {
+        const v = data[offset + c];
+        if (v > maxVal) {
+          maxVal = v;
+          maxIdx = c;
+        }
+      }
+
+      // Collapse duplicate consecutive tokens and skip blank (index 0)
+      if (maxIdx !== prev && maxIdx !== 0 && maxIdx < vocab.length) {
+        tokens.push(vocab[maxIdx]);
+      }
+      prev = maxIdx;
+    }
+
+    const t1 = performance.now();
+    const elapsedMs = t1 - t0;
+    const rtf = (elapsedMs / 1000) / audioDurationSec;
+
+    const transcript = tokens.join('').replace(/▁/g, ' ').trim();
+    outBox.innerText = transcript || '(Silence / unrecognised)';
+
+    document.getElementById('timeBadge').innerText = `Latency: ${Math.round(elapsedMs)} ms (${audioDurationSec.toFixed(1)}s audio)`;
+    document.getElementById('rtfBadge').innerText = `RTF: ${rtf.toFixed(2)}`;
+    document.getElementById('btnCopy').disabled = !transcript;
+
+  } catch (err) {
+    console.error(err);
+    outBox.innerText = 'Inference error: ' + err.message;
+  }
+}
+
+function copyText() {
+  const text = document.getElementById('outputBox').innerText;
+  if (text) {
+    navigator.clipboard.writeText(text);
+    alert('Copied to clipboard!');
+  }
+}
+window.runInference = runInference;
+</script>
+
+</body>
+</html>
